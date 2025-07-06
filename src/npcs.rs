@@ -48,8 +48,14 @@ impl Bullet {
     pub fn id(&self) -> String {self.1.clone()}
 }
 
-#[derive(Default, Debug, Clone)]
-pub struct Explosion(String);
+#[derive(Debug, Clone)]
+pub struct Explosion(String, Instant);
+
+impl Default for Explosion {
+    fn default() -> Self {
+        Explosion(String::new(), Instant::now())
+    }
+}
 
 impl Explosion {
     pub fn new(ctx: &mut Context, gameboard: &mut Gameboard, x: f32, y: f32) -> Self {
@@ -58,12 +64,13 @@ impl Explosion {
         println!("CREATED EXPLOSION {:?}", id);
         let explosion = Sprite::new(ctx, &id, "explosion", (45.0, 45.0), (Offset::Static(x), Offset::Static(y)));
         gameboard.insert_sprite(ctx, explosion);
-        Explosion(id)
+        Explosion(id, Instant::now())
     }
 
     pub fn react(&mut self, ctx: &mut Context, gameboard: &mut Gameboard) -> bool {
-        let elapsed = &mut ctx.state().get_mut_or_default::<GameState>().interval.unwrap().elapsed();
-        if elapsed.as_millis() % 300 == 0 {
+        let elapsed = self.1.elapsed();
+        if elapsed.as_millis() > 200 {
+            gameboard.remove_sprite_by_id(&self.0);
             return false
         }
         true

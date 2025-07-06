@@ -97,12 +97,10 @@ impl Galaga {
             let mut gamestate = ctx.state().get_mut_or_default::<GameState>();
             let mut explosions = gamestate.explosions.clone();
 
-            explosions.as_mut().map(|e| e.react(ctx, gameboard));
+            explosions.retain_mut(|e| e.react(ctx, gameboard));
             
-            let mut gamestate = ctx.state().get_mut_or_default::<GameState>();
+            let gamestate = ctx.state().get_mut_or_default::<GameState>();
             gamestate.explosions = explosions;
-
-            let mut gamestate = ctx.state().get_mut_or_default::<GameState>().clone();
 
             let (maxw, maxh) = gameboard.0.size(ctx);
             gameboard.2.iter_mut().enumerate().for_each(|(i, s)| {
@@ -114,7 +112,6 @@ impl Galaga {
                 //  TODO: Need to keep everything a percentage of screen size
             });
 
-            ctx.state().set(gamestate);
         } else if let Some(CollisionEvent(a, b)) = event.downcast_ref::<CollisionEvent>() {
             let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
             println!("{:?} collided into {:?}", b, a);
@@ -133,7 +130,8 @@ impl Galaga {
                 gameboard.remove_sprite_by_id(a);
 
                 let explosion = Explosion::new(ctx, gameboard, pos.0, pos.1);
-                gameboard.explosions.push(explosion);
+                let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
+                gamestate.explosions.push(explosion);
             }
         } else if let Some(keyboard_event) = event.downcast_ref::<KeyboardEvent>() {
             let gamestate = ctx.state().get_mut_or_default::<GameState>();

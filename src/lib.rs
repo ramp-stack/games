@@ -13,9 +13,7 @@ use image::{load_from_memory, RgbaImage};
 use pelican_ui::include_assets;
 
 mod galaga;
-mod settings;
 mod components;
-mod events;
 mod player;
 mod npcs;
 
@@ -60,7 +58,7 @@ enum Games {
 }
 
 impl Games {
-    pub fn init(&self, ctx: &mut Context) -> Box<dyn Drawable {
+    pub fn init(&self, ctx: &mut Context) -> Box<dyn AppPage> {
         match self {
             Games::Galaga => Box::new(Galaga::new(ctx))
         }
