@@ -219,27 +219,3 @@ impl Galaga {
         true
     }
 }
-
-#[derive(Debug, Component)]
-pub struct Settings(Stack, Page);
-impl OnEvent for Settings {}
-
-impl AppPage for Settings {
-    fn has_nav(&self) -> bool {false}
-    fn navigate(self: Box<Self>, ctx: &mut Context, index: usize) -> Result<Box<dyn AppPage>, Box<dyn AppPage>> {
-        match index {
-            0 => Ok(Box::new(Galaga::new(ctx))),
-            _ => Err(self)
-        }
-    }
-}
-
-impl Settings{
-    pub fn new(ctx: &mut Context) -> Self {
-        let buttons = vec
-        let content = Content::new(ctx, Offset::Start, vec![]);
-        let settings = IconButton::navigation(ctx, "settings", |ctx: &mut Context| ctx.trigger_event(NavigateEvent(0)));
-        let header = Header::stack(ctx, None, "Galaga", Some(settings));
-        Galaga(Column::center(24.0), header, gameboard)
-    }
-}

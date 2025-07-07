@@ -19,6 +19,8 @@ mod components;
 mod player;
 mod npcs;
 mod server;
+mod events;
+mod settings;
 
 use galaga::Galaga;
 use player::Player;
