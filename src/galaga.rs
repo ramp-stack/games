@@ -1,4 +1,5 @@
 use std::any::Any;
+#[cfg(target_arch = "aarch64")]
 use std::arch::aarch64::__crc32b;
 use pelican_ui::events::{Event, Key, KeyboardEvent, KeyboardState, NamedKey, OnEvent, TickEvent};
 use pelican_ui::drawable::{Align, Drawable, Component};
