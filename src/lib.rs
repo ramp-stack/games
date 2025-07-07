@@ -11,14 +11,18 @@ use std::os::unix::raw::mode_t;
 use std::ptr::addr_of_mut;
 use image::{load_from_memory, RgbaImage};
 use pelican_ui::include_assets;
+use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
 
 mod galaga;
 mod components;
 mod player;
 mod npcs;
+mod server;
 
 use galaga::Galaga;
-// use server::{GameServer, ServerEventHandler};
+use player::Player;
+use server::{ArduinoServer, GameAction};
 
 pub struct MyApp;
 
@@ -36,6 +40,11 @@ impl Plugins for MyApp {
 
 impl Application for MyApp {
     async fn new(ctx: &mut Context) -> Box<dyn Drawable> {
+        let arduino_server = ArduinoServer::new(3030);
+        let action_queue = arduino_server.get_action_queue();
+        let _server_handle = arduino_server.start();
+        println!("Arduino WebSocket server started in background thread");
+        
         ctx.assets.include_assets(include_assets!("./assets"));
         let assets = &mut ctx.assets;
         ctx.theme.brand.illustrations.insert(assets, "spaceship");
@@ -46,7 +55,7 @@ impl Application for MyApp {
         ctx.theme.brand.illustrations.insert(assets, "bullet_blue");
         ctx.theme.brand.illustrations.insert(assets, "explosion");
 
-        let game = Games::Galaga.init(ctx);
+        let game = Games::Galaga.init(ctx, action_queue);
         Box::new(Interface::new(ctx, game, None))
     }
 }
@@ -58,9 +67,9 @@ enum Games {
 }
 
 impl Games {
-    pub fn init(&self, ctx: &mut Context) -> Box<dyn AppPage> {
+    pub fn init(&self, ctx: &mut Context, action_queue: Arc<Mutex<VecDeque<GameAction>>>) -> Box<dyn AppPage> {
         match self {
-            Games::Galaga => Box::new(Galaga::new(ctx))
+            Games::Galaga => Box::new(Galaga::new(ctx, action_queue))
         }
     }
 }

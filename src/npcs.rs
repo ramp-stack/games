@@ -32,8 +32,8 @@ impl Bullet {
         // println!("Bullet is reacting with state {:?} and id {:?}", self.0, self.1);
         let bullet = gameboard.get_sprite_by_id(&self.1).unwrap();
         match self.0 {
-            SpriteState::MovingUp => bullet.adjustments().1 -= 1.0,
-            SpriteState::MovingDown => bullet.adjustments().1 += 1.0,
+            SpriteState::MovingUp => bullet.adjustments().1 -= 3.0,
+            SpriteState::MovingDown => bullet.adjustments().1 += 3.0,
             _ => {}
         }
 
@@ -153,7 +153,7 @@ impl EnemyType {
         (Sprite::new(ctx, &id, path, (40.0, 40.0), (Offset::Static(x), Offset::Static(y))), id)
     }
 }
-
+#[derive(Copy, Clone)]
 pub enum EnemyPatterns {
     Star,
     Triangle,
