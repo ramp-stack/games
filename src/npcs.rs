@@ -59,11 +59,13 @@ impl Default for Explosion {
 }
 
 impl Explosion {
-    pub fn new(ctx: &mut Context, gameboard: &mut Gameboard, x: f32, y: f32) -> Self {
+    pub fn new(ctx: &mut Context, gameboard: &mut Gameboard, pos: (f32, f32), dim: (f32, f32)) -> Self {
+        let dim = (dim.0 + 10.0, dim.1 + 10.0);
+        let pos = (pos.0 - 5.0, pos.1 - 5.0);
         let c = gameboard.2.iter().filter(|s| s.id().starts_with("explosion")).last().map(|s| s.id().strip_prefix("explosion_").unwrap()).unwrap_or("0");
         let id = format!("explosion_{}", c.parse::<usize>().unwrap()+1);
         println!("CREATED EXPLOSION {:?}", id);
-        let explosion = Sprite::new(ctx, &id, "explosion", (45.0, 45.0), (Offset::Static(x), Offset::Static(y)));
+        let explosion = Sprite::new(ctx, &id, "explosion", dim, (Offset::Static(pos.0), Offset::Static(pos.1)));
         gameboard.insert_sprite(ctx, explosion);
         Explosion(id, Instant::now())
     }
@@ -114,10 +116,13 @@ impl Enemy {
                 SpriteAction::Hurt => false,
                 SpriteAction::Die => false,
                 SpriteAction::Shoot => {
-                    println!("ENEMY IS SHOOTING");
-                    let bullet = Bullet::new(ctx, gameboard, SpriteState::MovingDown, pos.0 + ((dim.0/2.0) - 7.5), pos.1 + 20.0);
                     let gamestate = ctx.state().get_mut_or_default::<GameState>();
-                    gamestate.bullets.push(bullet);
+                    if gamestate.can_shoot {
+                        println!("ENEMY IS SHOOTING");
+                        let bullet = Bullet::new(ctx, gameboard, SpriteState::MovingDown, pos.0 + ((dim.0/2.0) - 7.5), pos.1 + 20.0);
+                        let gamestate = ctx.state().get_mut_or_default::<GameState>();
+                        gamestate.bullets.push(bullet);
+                    }
                     false
                 },
                 _ => true,

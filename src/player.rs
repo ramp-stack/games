@@ -32,12 +32,8 @@ impl Player {
         }
         
         for i in 0..self.2 {
-            let life_sprite = Sprite::new(
-                ctx,
-                &format!("player_life_{}", i),
-                "spaceship",
-                (40.0, 40.0), 
-                (Offset::Static(20.0 + i as f32 * 50.0), Offset::Static(10.0)), 
+            let life_sprite = Sprite::new(ctx, &format!("player_life_{}", i), "spaceship", (25.0, 25.0), 
+                (Offset::Static((i as f32 * 5.0) + (i as f32 * 25.0)), Offset::Static(10.0)), 
             );
             gameboard.insert_sprite(ctx, life_sprite);
         }
@@ -87,7 +83,9 @@ impl Player {
         
         let player = player_opt.unwrap();
 
-        if self.4 { 
+
+        let gamestate = ctx.state().get_mut_or_default::<GameState>();
+        if gamestate.player_auto_move { 
             let player_pos = player.position(ctx).0;
             let player_width = player.dimensions().0;
             
@@ -106,8 +104,8 @@ impl Player {
             }
         }
 
-        // Handle manual movement only if auto-movement is not active
-        if !self.4 {
+        let gamestate = ctx.state().get_mut_or_default::<GameState>();
+        if !gamestate.player_auto_move {
             match self.0 {
                 SpriteState::Idle => {},
                 SpriteState::MovingLeft => if player.position(ctx).0 > 0.0 {
@@ -120,10 +118,13 @@ impl Player {
             }
         }
 
-        if let Some(last_shot_time) = self.3 {
-            if last_shot_time.elapsed().as_millis() > 500 { 
-                self.1.push(SpriteAction::Shoot);
-                self.3 = Some(Instant::now()); 
+        let gamestate = ctx.state().get_mut_or_default::<GameState>();
+        if gamestate.player_auto_shoot {
+            if let Some(last_shot_time) = self.3 {
+                if last_shot_time.elapsed().as_millis() > 500 { 
+                    self.1.push(SpriteAction::Shoot);
+                    self.3 = Some(Instant::now()); 
+                }
             }
         }
 
@@ -137,10 +138,11 @@ impl Player {
                 SpriteAction::Hurt => {
                     let player = gameboard.get_sprite_by_id("player").unwrap();
                     let pos = player.position(ctx);
+                    let dim = player.dimensions().clone();
 
                     gameboard.remove_sprite_by_id("player");
 
-                    let explosion = Explosion::new(ctx, gameboard, pos.0, pos.1);
+                    let explosion = Explosion::new(ctx, gameboard, pos, dim);
                     let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
                     gamestate.explosions.push(explosion);
 
@@ -159,10 +161,12 @@ impl Player {
                     false 
                 },
                 SpriteAction::Die => {
+                    let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
+                    gamestate.score = 0;
                     gameboard.remove_sprite_by_id("player");
                     
                     self.6 = Some(Instant::now());
-    
+                    self.2 = 3;
                     false
                 },
                 SpriteAction::Shoot => {
