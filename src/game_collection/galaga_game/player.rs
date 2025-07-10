@@ -6,10 +6,10 @@ use pelican_ui::layout::{Area, SizeRequest, Layout};
 use pelican_ui::{Context, Component};
 use pelican_ui_std::{Stack, Content, Header, Bumper, Page, Button, Offset, TextStyle, Text, AppPage, Size, Padding, Column, Wrap, Row, ButtonSize, ButtonWidth, ButtonStyle, ButtonState, IconButton, NavigateEvent, DataItem};
 use pelican_game_engine::{AspectRatio, Sprite, Gameboard, SpriteState, SpriteAction};
-use crate::npcs::Explosion;
+use crate::game_collection::galaga_game::npcs::Explosion;
 
-use crate::npcs::Bullet;
-use crate::galaga::GameState;
+use crate::game_collection::galaga_game::npcs::Bullet;
+use crate::game_collection::galaga_game::galaga::GameState;
 
 #[derive(Default, Debug, Clone)]
 // Fields: SpriteState, Vec<SpriteAction>, lives (u32), auto_shoot_timer (Option<Instant>), auto_move_enabled (bool), auto_move_direction (bool - true=right, false=left)

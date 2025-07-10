@@ -10,10 +10,10 @@ use pelican_game_engine::{AspectRatio, Sprite, Gameboard, SpriteState, SpriteAct
 
 
 use crate::ArduinoServer;
-use crate::player::Player;
-use crate::npcs::{Enemy, EnemyPatterns, Bullet, Explosion};
-use crate::server::GameAction;
-use crate::settings::Settings;
+use crate::game_collection::galaga_game::player::Player;
+use crate::game_collection::galaga_game::npcs::{Enemy, EnemyPatterns, Bullet, Explosion};
+use crate::game_collection::galaga_game::server::GameAction;
+use crate::game_collection::galaga_game::settings::Settings;
 
 use std::time::Instant;
 use rand::thread_rng;

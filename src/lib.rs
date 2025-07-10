@@ -1,3 +1,5 @@
+mod game_collection;
+
 use pelican_ui::{Context, Plugins, Plugin, maverick_start, start, Application, PelicanEngine, MaverickOS, HardwareContext, runtime::Services};
 use pelican_ui::drawable::Drawable;
 use pelican_ui_std::{AvatarIconStyle, AvatarContent, Interface, NavigateEvent, AppPage};
@@ -14,17 +16,9 @@ use pelican_ui::include_assets;
 use std::sync::{Arc, Mutex};
 use std::collections::VecDeque;
 
-mod galaga;
-mod components;
-mod player;
-mod npcs;
-mod server;
-mod events;
-mod settings;
-
-use galaga::Galaga;
-use player::Player;
-use server::{ArduinoServer, GameAction};
+use crate::game_collection::galaga_game::galaga::Galaga;
+use crate::game_collection::galaga_game::player::Player;
+use crate::game_collection::galaga_game::server::{ArduinoServer, GameAction};
 
 pub struct MyApp;
 
