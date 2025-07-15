@@ -124,7 +124,7 @@ pub struct DataItemSettings;
 
 impl DataItemSettings {
     pub fn new(ctx: &mut Context, title: &str, sub: &str, buttons: Vec<(&'static str, &str, Box<dyn FnMut(&mut Context)>)>) -> DataItem {
-        let buttons = buttons.into_iter().map(|(i, n, c)| Button::secondary(ctx, Some(i), n, None, c)).collect::<Vec<_>>();
+        let buttons = buttons.into_iter().map(|(i, n, c)| Button::secondary(ctx, Some(i), n, None, c, None)).collect::<Vec<_>>();
         DataItem::new(ctx, None, title, Some(sub), None, None, Some(buttons))
     }
 }

@@ -38,14 +38,15 @@ impl Application for MyApp {
     async fn new(ctx: &mut Context) -> Box<dyn Drawable> {
         
         ctx.assets.include_assets(include_assets!("./assets"));
-        let assets = &mut ctx.assets;
-        ctx.theme.brand.illustrations.insert(assets, "spaceship");
-        ctx.theme.brand.illustrations.insert(assets, "b2");
-        ctx.theme.brand.illustrations.insert(assets, "tiki_fly");
-        ctx.theme.brand.illustrations.insert(assets, "northrop");
-        ctx.theme.brand.illustrations.insert(assets, "bullet_downward");
-        ctx.theme.brand.illustrations.insert(assets, "bullet_blue");
-        ctx.theme.brand.illustrations.insert(assets, "explosion");
+        let mut illustrations = ctx.theme.brand.illustrations.clone();
+        illustrations.insert(ctx, "spaceship", "spaceship.png");
+        illustrations.insert(ctx, "b2", "b2.png");
+        illustrations.insert(ctx, "tiki_fly", "tiki_fly.png");
+        illustrations.insert(ctx, "northrop", "northrop.png");
+        illustrations.insert(ctx, "bullet_downward", "bullet_downward.png");
+        illustrations.insert(ctx, "bullet_blue", "bullet_blue.png");
+        illustrations.insert(ctx, "explosion", "explosion.png");
+        ctx.theme.brand.illustrations = illustrations;
 
         let game = Games::Galaga.init(ctx);
         Box::new(Interface::new(ctx, game, None))
