@@ -20,9 +20,10 @@ impl OnEvent for Settings {
     fn on_event(&mut self, ctx: &mut Context, event: &mut dyn Event) -> bool {
         if let Some(AdjustPressureEvent(p)) = event.downcast_ref::<AdjustPressureEvent>() {
             let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
-            if gamestate.peak_min < 1000.0 {
-                gamestate.peak_min += *p as f64; 
-                println!("peak: {}", gamestate.peak_min);
+            let new_threshold = gamestate.peak_min + (*p as f64);
+            if new_threshold >= 50.0 && new_threshold <= 1000.0 {
+                gamestate.peak_min = new_threshold;
+                gamestate.sync_pressure_threshold();
                 *self.1.content().find_at::<DataItem>(0).unwrap().label() = format!("Touchpad Pressure: {:.0}", gamestate.peak_min);
             }
         } else if event.downcast_ref::<ToggleFliesShoot>().is_some() {
@@ -124,7 +125,7 @@ pub struct DataItemSettings;
 
 impl DataItemSettings {
     pub fn new(ctx: &mut Context, title: &str, sub: &str, buttons: Vec<(&'static str, &str, Box<dyn FnMut(&mut Context)>)>) -> DataItem {
-        let buttons = buttons.into_iter().map(|(i, n, c)| Button::secondary(ctx, Some(i), n, None, c)).collect::<Vec<_>>();
+        let buttons = buttons.into_iter().map(|(i, n, c)| Button::secondary(ctx, Some(i), n, None, c, None)).collect::<Vec<_>>();
         DataItem::new(ctx, None, title, Some(sub), None, None, Some(buttons))
     }
 }

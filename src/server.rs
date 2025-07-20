@@ -1,265 +1,226 @@
-use std::net::TcpListener;
-use std::thread::{spawn, JoinHandle};
-use tungstenite::{accept, Message, WebSocket};
-use tungstenite::protocol::WebSocket as WS;
-use std::net::TcpStream;
+use tokio_tungstenite::{accept_async, tungstenite::protocol::Message};
+use futures_util::{SinkExt, StreamExt};
+use tokio::net::TcpListener;
 use serde_json::Value;
-use local_ip_address::local_ip;
+use local_ip_address::list_afinet_netifas;
 use std::sync::{Arc, Mutex};
-use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use serde::{Deserialize, Serialize};
+use std::net::IpAddr;
+use std::collections::{VecDeque, HashMap};
+use uuid::Uuid;
+use std::time::Instant;
+
+#[derive(Debug, Clone, PartialEq, Copy, Eq, Hash, Serialize, Deserialize)]
+pub enum GameAction { MoveLeft, MoveRight, Shoot, Idle }
 
 #[derive(Debug, Clone)]
-pub enum GameAction {
-    MoveLeft,
-    MoveRight,
-    Shoot,
-    StopMoving,
+pub struct ActionEvent {
+    pub connection_id: String,
+    pub action: GameAction,
+    pub pressure: f64,
+    pub timestamp: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct SimultaneousActions {
+    pub connection_id: String,
+    pub movement: Option<GameAction>,
+    pub shooting: bool,
+    pub movement_pressure: f64,
+    pub shoot_pressure: f64,
+    pub timestamp: Instant,
+}
+
+#[derive(Deserialize)]
+struct ActionRequest { 
+    action: String, 
+    pressure: Option<f64>,
+}
+
+#[derive(Clone, Default)]
+struct ConnectionState {
+    current_movement: Option<GameAction>,
+    is_shooting: bool,
+    movement_pressure: f64,
+    shoot_pressure: f64,
 }
 
 pub struct ArduinoServer {
     ip: String,
     port: u16,
-    action_queue: Arc<Mutex<VecDeque<GameAction>>>,
+    action_queue: Arc<Mutex<VecDeque<ActionEvent>>>,
+    simultaneous_queue: Arc<Mutex<VecDeque<SimultaneousActions>>>,
+    pressure_threshold: Arc<Mutex<f64>>,
+    connection_states: Arc<Mutex<HashMap<String, ConnectionState>>>,
 }
 
 impl ArduinoServer {
-    pub fn new(port: u16) -> Self {
-        let local_ip = local_ip().unwrap();
-        ArduinoServer {
-            ip: local_ip.to_string(),
-            port,
+    pub fn new() -> Self {
+        let ip = Self::get_wifi_ip().unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+        
+        Self {
+            ip: ip.to_string(),
+            port: 3030,
             action_queue: Arc::new(Mutex::new(VecDeque::new())),
+            simultaneous_queue: Arc::new(Mutex::new(VecDeque::new())),
+            pressure_threshold: Arc::new(Mutex::new(500.0)),
+            connection_states: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-
-    pub fn get_action_queue(&self) -> Arc<Mutex<VecDeque<GameAction>>> {
-        self.action_queue.clone()
+    
+    pub fn set_pressure_threshold(&self, threshold: f64) {
+        if let Ok(mut t) = self.pressure_threshold.lock() { *t = threshold; }
     }
-
-    pub fn start(&self) -> JoinHandle<()> {
-        let ip = self.ip.clone();
-        let port = self.port;
-        let action_queue = self.action_queue.clone();
+    
+    pub fn get_pressure_threshold(&self) -> f64 {
+        self.pressure_threshold.lock().map(|t| *t).unwrap_or(500.0)
+    }
+    
+    fn get_wifi_ip() -> Option<IpAddr> {
+        let nics = list_afinet_netifas().ok()?;
+        let patterns = ["wlan", "wifi", "Wi-Fi", "en0", "en1", "wlp"];
         
-        spawn(move || {
-            let bind_address = format!("{}:{}", ip, port);
-            
-            let server = TcpListener::bind(&bind_address).unwrap();
-            println!("WebSocket server listening on {}", bind_address);
-            println!("Connect your Arduino to: {}", ip);
-
-            // Set non-blocking mode for the server
-            server.set_nonblocking(true).unwrap();
-            
-            let mut last_status_print = Instant::now();
-            let status_interval = Duration::from_secs(2); // Print every 2 seconds
-            
-            loop {
-                // Print status periodically
-                if last_status_print.elapsed() >= status_interval {
-                    println!("Server running - listening for connections on {}", bind_address);
-                    last_status_print = Instant::now();
-                }
-                
-                // Check for incoming connections
-                match server.accept() {
-                    Ok((stream, _)) => {
-                        let queue = action_queue.clone();
-                        spawn(move || {
-                            Self::handle_client(stream, queue);
-                        });
-                    }
-                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
-                        // No connection available, sleep briefly and continue
-                        std::thread::sleep(Duration::from_millis(100));
-                    }
-                    Err(e) => {
-                        println!("Error accepting connection: {}", e);
-                    }
-                }
-            }
-        })
+        patterns.iter()
+            .find_map(|pattern| nics.iter()
+                .find(|(name, ip)| name.to_lowercase().contains(&pattern.to_lowercase()) 
+                    && ip.is_ipv4() && !ip.is_loopback())
+                .map(|(_, ip)| *ip))
+            .or_else(|| nics.iter()
+                .find(|(_, ip)| ip.is_ipv4() && !ip.is_loopback())
+                .map(|(_, ip)| *ip))
     }
+    
 
-    fn handle_client(stream: TcpStream, action_queue: Arc<Mutex<VecDeque<GameAction>>>) {
-        let mut websocket = accept(stream).unwrap();
-        println!("New WebSocket connection established");
-
+    
+    pub async fn start(&self) {
+        let listener = TcpListener::bind(format!("0.0.0.0:{}", self.port)).await.unwrap();
+        println!("Server running on {}:{}", self.ip, self.port);
+        
         loop {
-            match websocket.read_message() {
-                Ok(msg) => {
-                    if msg.is_text() {
-                        let text = msg.to_text().unwrap();
-                        println!("Received: {}", text);
-                        if let Ok(json) = serde_json::from_str::<Value>(text) {
-                            if let Some(action) = json.get("action") {
-                                if let Some(action_str) = action.as_str() {
-                                    let game_action = match action_str {
-                                        "peakleft" => {
-                                            if let Some(value) = json.get("value") {
-                                                println!("   Left movement value: {}", value);
-                                                Some(GameAction::MoveLeft)
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                        "peakright" => {
-                                            if let Some(value) = json.get("value") {
-                                                println!("   Right movement value: {}", value);
-                                                Some(GameAction::MoveRight)
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                        "peakshoot" => {
-                                            if let Some(value) = json.get("value") {
-                                                println!("   Shoot value: {}", value);
-                                                Some(GameAction::Shoot)
-                                            } else {
-                                                None
-                                            }
-                                        }
-                                        "stop" => {
-                                            println!("   Stop movement");
-                                            Some(GameAction::StopMoving)
-                                        }
-                                        _ => {
-                                            println!("Unknown action: {}", action_str);
-                                            None
-                                        }
-                                    };
-
-                                    if let Some(action) = game_action {
-                                        if let Ok(mut queue) = action_queue.lock() {
-                                            queue.push_back(action);
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    println!("WebSocket error: {}", e);
-                    break;
-                }
+            if let Ok((stream, _)) = listener.accept().await {
+                let server = self.clone();
+                tokio::spawn(async move { let _ = server.handle_connection(stream).await; });
+            }
+        }
+    }
+    
+    async fn handle_connection(&self, stream: tokio::net::TcpStream) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let connection_id = format!("arduino-{}", Uuid::new_v4().simple());
+        let ws_stream = accept_async(stream).await?;
+        let (mut sender, mut receiver) = ws_stream.split();
+        
+        self.connection_states.lock().unwrap().insert(connection_id.clone(), ConnectionState::default());
+        
+        let _ = sender.send(Message::Text(serde_json::json!({
+            "type": "connected",
+            "connection_id": connection_id
+        }).to_string().into())).await;
+        
+        while let Some(msg) = receiver.next().await {
+            match msg? {
+                Message::Text(text) => self.process_message(&connection_id, &text),
+                Message::Close(_) => break,
+                Message::Ping(ping) => { let _ = sender.send(Message::Pong(ping)).await; }
+                _ => {}
             }
         }
         
-        println!("Client disconnected");
+        self.connection_states.lock().unwrap().remove(&connection_id);
+        Ok(())
+    }
+    
+    fn process_message(&self, connection_id: &str, text: &str) {
+        let Ok(request) = serde_json::from_str::<ActionRequest>(text) else { return; };
+        
+        let pressure = request.pressure.unwrap_or(0.0);
+        let threshold = self.get_pressure_threshold();
+        let Ok(mut states) = self.connection_states.try_lock() else { return; };
+        let state = states.entry(connection_id.to_string()).or_insert_with(ConnectionState::default);
+        
+        let (action, send_discrete) = match request.action.as_str() {
+            "peakleft" if pressure > threshold => {
+                state.current_movement = Some(GameAction::MoveLeft);
+                state.movement_pressure = pressure;
+                (GameAction::MoveLeft, true)
+            }
+            "peakright" if pressure > threshold => {
+                state.current_movement = Some(GameAction::MoveRight);
+                state.movement_pressure = pressure;
+                (GameAction::MoveRight, true)
+            }
+            "peakshoot" if pressure > threshold => {
+                state.is_shooting = true;
+                state.shoot_pressure = pressure;
+                (GameAction::Shoot, true)
+            }
+            "stop" => {
+                *state = ConnectionState::default();
+                (GameAction::Idle, true)
+            }
+            "stopmovement" => {
+                state.current_movement = None;
+                state.movement_pressure = 0.0;
+                (GameAction::Idle, true)
+            }
+            "stopshooting" => {
+                state.is_shooting = false;
+                state.shoot_pressure = 0.0;
+                (GameAction::Idle, false)
+            }
+            _ => return,
+        };
+        
+        let simultaneous = SimultaneousActions {
+            connection_id: connection_id.to_string(),
+            movement: state.current_movement,
+            shooting: state.is_shooting,
+            movement_pressure: state.movement_pressure,
+            shoot_pressure: state.shoot_pressure,
+            timestamp: Instant::now(),
+        };
+        
+        drop(states);
+        
+        if let Ok(mut queue) = self.simultaneous_queue.try_lock() {
+            queue.push_back(simultaneous);
+            if queue.len() > 50 { queue.pop_front(); }
+        }
+        
+        if send_discrete {
+            if let Ok(mut queue) = self.action_queue.try_lock() {
+                queue.push_back(ActionEvent {
+                    connection_id: connection_id.to_string(),
+                    action,
+                    pressure,
+                    timestamp: Instant::now(),
+                });
+                if queue.len() > 50 { queue.pop_front(); }
+            }
+        }
+    }
+    
+    pub fn get_action_queue(&self) -> Arc<Mutex<VecDeque<ActionEvent>>> {
+        Arc::clone(&self.action_queue)
+    }
+    
+    pub fn drain_actions(&self) -> Vec<ActionEvent> {
+        self.action_queue.try_lock().map_or(Vec::new(), |mut q| q.drain(..).collect())
+    }
+    
+    pub fn get_simultaneous_actions(&self) -> Vec<SimultaneousActions> {
+        self.simultaneous_queue.try_lock().map_or(Vec::new(), |mut q| q.drain(..).collect())
     }
 }
 
-// #include <WiFiS3.h>
-// #include <WebSocketsClient.h>
-// #include <ArduinoJson.h>
-
-// const char* ssid = "gooddogL";
-// const char* password = "eatbadman";
-
-// const char* websocket_server = "192.168.1.122";
-// const int websocket_port = 3030;
-
-// const int sensorPin = A0;
-
-// WebSocketsClient webSocket;
-// bool isConnected = false;
-
-// void setup() {
-//     Serial.begin(9600);
-//     while (!Serial); 
-//     delay(2000);     
-
-//     Serial.println("Attempting to connect to WiFi...");
-//     int status = WL_IDLE_STATUS;
-//     int retries = 0;
-//     while (status != WL_CONNECTED && retries < 10) {
-//         status = WiFi.begin(ssid, password);
-//         delay(1000);
-//         retries++;
-//         Serial.print("WiFi connection attempt ");
-//         Serial.println(retries);
-//     }
-
-//     if (status != WL_CONNECTED) {
-//         Serial.println("Failed to connect to WiFi.");
-//         return;
-//     }
-
-//     Serial.println("Initializing WebSocket connection...");
-//     webSocket.begin(websocket_server, websocket_port, "/");
-//     webSocket.onEvent(webSocketEvent);
-//     webSocket.setReconnectInterval(5000);  
-// }
-
-// // WebSocket event handler
-// void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
-//     switch (type) {
-//         case WStype_DISCONNECTED:
-//             isConnected = false;
-//             Serial.println("WebSocket disconnected.");
-//             break;
-
-//         case WStype_CONNECTED:
-//             isConnected = true;
-//             Serial.println("WebSocket connected.");
-//             break;
-
-//         case WStype_TEXT:
-//             Serial.print("Received text: ");
-//             Serial.write(payload, length);
-//             Serial.println();
-//             break;
-
-//         case WStype_BIN:
-//             Serial.println("Received binary data (not used).");
-//             break;
-
-//         case WStype_ERROR:
-//             isConnected = false;
-//             Serial.println("WebSocket error occurred.");
-//             break;
-
-//         case WStype_PING:
-//             Serial.println("WebSocket ping received.");
-//             break;
-
-//         case WStype_PONG:
-//             Serial.println("WebSocket pong received.");
-//             break;
-
-//         default:
-//             Serial.println("Unknown WebSocket event.");
-//             break;
-//     }
-// }
-
-// void sendSensorData(int sensorValue) {
-//     if (!isConnected) {
-//         Serial.println("Not connected. Skipping data send.");
-//         return;
-//     }
-
-//     StaticJsonDocument<200> doc;
-//     doc["action"] = "left";          
-//     doc["value"] = sensorValue;       
-
-//     String jsonString;
-//     serializeJson(doc, jsonString);
-
-//     Serial.print("Sending JSON: ");
-//     Serial.println(jsonString);
-
-//     webSocket.sendTXT(jsonString);   
-// }
-
-// void loop() {
-//     webSocket.loop();                     
-
-//     int sensorValue = analogRead(sensorPin);
-//     Serial.print("Sensor value: ");
-//     Serial.println(sensorValue);
-
-//     sendSensorData(sensorValue);
-// }
+impl Clone for ArduinoServer {
+    fn clone(&self) -> Self {
+        Self {
+            ip: self.ip.clone(),
+            port: self.port,
+            action_queue: Arc::clone(&self.action_queue),
+            simultaneous_queue: Arc::clone(&self.simultaneous_queue),
+            pressure_threshold: Arc::clone(&self.pressure_threshold),
+            connection_states: Arc::clone(&self.connection_states),
+        }
+    }
+}

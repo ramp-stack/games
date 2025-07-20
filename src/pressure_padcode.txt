@@ -1,0 +1,180 @@
+#include <WiFiS3.h>
+#include <WebSocketsClient.h>
+#include <ArduinoJson.h>
+#include "ArduinoGraphics.h"
+#include "Arduino_LED_Matrix.h"
+
+const char* ssid = "GNX63CCC8";
+const char* password = "RAZ7JRNZNM4Z";
+
+const char* serverAddress = "192.168.1.162";
+const int port = 3030;
+
+const char* DISPLAY_TEXT = "LEFT";     
+const char* ACTION_NAME = "peakleft";   
+
+const int pressureSensorPin = A0;
+const int maxAnalogValue = 1023;
+
+WebSocketsClient webSocket;
+ArduinoLEDMatrix matrix;
+bool isConnected = false;
+unsigned long lastSend = 0;
+const unsigned long sendInterval = 1;
+unsigned long lastScroll = 0;
+const unsigned long scrollInterval = 200;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  pinMode(pressureSensorPin, INPUT);
+
+  matrix.begin();
+  matrix.beginDraw();
+  matrix.stroke(0xFFFFFFFF);
+  matrix.textSize(1);
+  matrix.textFont(Font_5x7);
+  matrix.beginText(0, 0, 0xFFFFFF);
+  matrix.println(DISPLAY_TEXT);
+  matrix.endText();
+  matrix.endDraw();
+
+  connectToWiFi();
+  initializeWebSocket();
+}
+
+void loop() {
+  if (millis() - lastScroll >= scrollInterval) {
+    scrollText();
+    lastScroll = millis();
+  }
+
+  webSocket.loop();
+
+  if (isConnected && millis() - lastSend >= sendInterval) {
+    sendPressureData();
+    lastSend = millis();
+  }
+}
+
+void connectToWiFi() {
+  Serial.print("Connecting to WiFi: ");
+  Serial.println(ssid);
+
+  WiFi.begin(ssid, password);
+
+  int attempt = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+    attempt++;
+    if (attempt >= 20) {
+      Serial.println("\nFailed to connect to WiFi. Check credentials or network.");
+      return;
+    }
+  }
+
+  Serial.println("\nWiFi connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
+}
+
+void initializeWebSocket() {
+  Serial.print("Connecting to WebSocket server at ");
+  Serial.print(serverAddress);
+  Serial.print(":");
+  Serial.println(port);
+
+  webSocket.begin(serverAddress, port, "/");
+  webSocket.onEvent(webSocketEvent);
+  webSocket.setReconnectInterval(5000);
+  webSocket.enableHeartbeat(15000, 3000, 2);
+}
+
+void scrollText() {
+  static int x = 12;
+
+  matrix.beginDraw();
+  matrix.clear();
+  matrix.stroke(0xFFFFFFFF);
+  matrix.textSize(1);
+  matrix.textFont(Font_5x7);
+  matrix.beginText(x, 0, 0xFFFFFF);
+  matrix.println(DISPLAY_TEXT);
+  matrix.endText();
+  matrix.endDraw();
+
+  x--;
+
+  if (x < -36) {
+    x = 12;
+  }
+}
+
+void sendPressureData() {
+  int rawPressure = analogRead(pressureSensorPin);
+  float pressureValue = (float)rawPressure;
+
+  Serial.print("[SEND] Raw Pressure: ");
+  Serial.print(rawPressure);
+  Serial.print(" | Converted: ");
+  Serial.println(pressureValue);
+
+  sendGameAction(ACTION_NAME, pressureValue);
+}
+
+void webSocketEvent(WStype_t type, uint8_t* payload, size_t length) {
+  switch (type) {
+    case WStype_DISCONNECTED:
+      isConnected = false;
+      Serial.println("[WebSocket] Disconnected");
+      break;
+
+    case WStype_CONNECTED:
+      isConnected = true;
+      Serial.print("[WebSocket] Connected to: ");
+      Serial.println((char*)payload);
+      break;
+
+    case WStype_TEXT:
+      // Ignore received messages
+      break;
+
+    case WStype_ERROR:
+      isConnected = false;
+      Serial.println("[WebSocket] Error occurred");
+      break;
+
+    case WStype_BIN:
+      Serial.println("[WebSocket] Binary message received (ignored)");
+      break;
+
+    default:
+      Serial.println("[WebSocket] Unknown event type");
+      break;
+  }
+}
+
+
+
+void sendGameAction(const char* action, float pressureValue) {
+  if (!isConnected) {
+    Serial.println("[SEND] Not connected. Skipping send.");
+    return;
+  }
+
+  DynamicJsonDocument doc(256);
+  doc["action"] = action;
+  doc["value"] = true;
+  doc["pressure"] = pressureValue;
+
+  String message;
+  serializeJson(doc, message);
+  webSocket.sendTXT(message);
+
+  Serial.print("[SEND] Sent: ");
+  Serial.print(message);
+  Serial.print(" | Pressure: ");
+  Serial.println(pressureValue);
+}
