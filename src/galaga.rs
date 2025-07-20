@@ -325,19 +325,20 @@ impl Galaga {
                     gamestate.explosions.push(explosion);
                 }
             }else if a.starts_with("bullet") && b.starts_with("missile") || b.starts_with("bullet") && a.starts_with("missile"){
-                let bullet = gameboard.get_sprite_by_id(b).unwrap();
-                let pos = bullet.position(ctx).clone();
-                let dim = bullet.dimensions().clone();
-                let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
+                if let Some(bullet) = gameboard.get_sprite_by_id(b) {
+                    let pos = bullet.position(ctx).clone();
+                    let dim = bullet.dimensions().clone();
+                    let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
 
-                gamestate.bullets.retain_mut(|bu| bu.id() != *a);
-                gameboard.remove_sprite_by_id(a);
-                gamestate.bullets.retain_mut(|bu| bu.id() != *b);
-                gameboard.remove_sprite_by_id(b);
+                    gamestate.bullets.retain_mut(|bu| bu.id() != *a);
+                    gameboard.remove_sprite_by_id(a);
+                    gamestate.bullets.retain_mut(|bu| bu.id() != *b);
+                    gameboard.remove_sprite_by_id(b);
 
-                let explosion = Explosion::new(ctx, gameboard, pos, dim);
-                let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
-                gamestate.explosions.push(explosion);
+                    let explosion = Explosion::new(ctx, gameboard, pos, dim);
+                    let gamestate = &mut ctx.state().get_mut_or_default::<GameState>();
+                    gamestate.explosions.push(explosion);
+                }
             }
         } else if let Some(keyboard_event) = event.downcast_ref::<KeyboardEvent>() {
             let gamestate = ctx.state().get_mut_or_default::<GameState>();
